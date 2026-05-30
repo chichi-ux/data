@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 應用現況與需求分析互動式儀表板</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', 'Noto Sans TC', sans-serif;
+            background: #f1f5f9;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .scroll-custom::-webkit-scrollbar {
+            width: 6px;
+        }
+        .scroll-custom::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .scroll-custom::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        .scroll-custom::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 flex flex-col antialiased">
+
+    <!-- Toast Notification (Custom Modal replacement) -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-10 opacity-0 transition-all duration-300 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm">
+        <span id="toastIcon">💡</span>
+        <span id="toastMessage">已成功載入最新數據！</span>
+    </div>
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-tr from-indigo-500 to-violet-500 p-2 rounded-lg">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v8m-6 0h6"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-md font-bold tracking-tight bg-gradient-to-r from-white via-indigo-100 to-indigo-300 bg-clip-text text-transparent">AntigravityIDE 課程數據分析</h1>
+                    <p class="text-[10px] text-slate-400">AI 應用現況與需求課前調查</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <!-- CSV Import Trigger -->
+                <label for="csvFileInput" class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs py-2 px-3.5 rounded-lg border border-slate-700 transition duration-150 flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    <span>匯入最新回覆 CSV</span>
+                </label>
+                <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+                <button onclick="resetToSample()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-3 rounded-lg transition shadow-sm">
+                    重置為真實樣本
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8">
+        
+        <!-- Welcome banner with stats preview -->
+        <div class="bg-gradient-to-r from-indigo-800 via-purple-900 to-slate-950 text-white rounded-2xl p-6 md:p-8 shadow-xl relative overflow-hidden">
+            <div class="absolute -right-10 -bottom-10 opacity-10 w-96 h-96 rounded-full bg-indigo-500 blur-3xl"></div>
+            <div class="relative z-10 max-w-3xl">
+                <span class="bg-indigo-500/30 text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wider">課程分析智庫</span>
+                <h2 class="text-2xl md:text-4xl font-extrabold mt-3 tracking-tight">解讀學員真實痛點，打造高含金量課綱</h2>
+                <p class="text-slate-300 text-sm md:text-base mt-2 leading-relaxed">此儀表板已為您自動讀取並內置了 <strong class="text-white">AntigravityIDE 課前調查問卷結果</strong>。請靈活切換下方篩選條件，取得最具價值的教學演示切入點！</p>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="glass-card rounded-2xl p-4 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider">按學員「職務類別」精準分析</h3>
+                <p class="text-xs text-slate-400 mt-0.5">點擊下方按鈕可連動篩選全站數據：</p>
+            </div>
+            <div class="flex flex-wrap gap-2" id="roleFilterGroup">
+                <!-- Filter buttons generated here -->
+            </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <!-- Card 1 -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm flex items-center justify-between border border-white hover:shadow-md transition">
+                <div>
+                    <span class="text-xs font-semibold text-slate-400 uppercase">總有效填答樣本</span>
+                    <h4 class="text-3xl font-extrabold text-slate-800 mt-1" id="m_total">0</h4>
+                    <span class="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-semibold mt-2 inline-block">100% 真實數據</span>
+                </div>
+                <div class="p-3.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                </div>
+            </div>
+            <!-- Card 2 -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm flex items-center justify-between border border-white hover:shadow-md transition">
+                <div>
+                    <span class="text-xs font-semibold text-slate-400 uppercase">最常用 AI 工具</span>
+                    <h4 class="text-xl font-bold text-slate-800 mt-1 truncate max-w-[170px]" id="m_topTool">ChatGPT</h4>
+                    <span class="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-semibold mt-2 inline-block" id="m_topToolPct">佔比 --%</span>
+                </div>
+                <div class="p-3.5 bg-emerald-50 text-emerald-600 rounded-2xl">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+            </div>
+            <!-- Card 3 -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm flex items-center justify-between border border-white hover:shadow-md transition">
+                <div>
+                    <span class="text-xs font-semibold text-slate-400 uppercase">執行效率提升自評</span>
+                    <h4 class="text-3xl font-extrabold text-slate-800 mt-1" id="m_avgEff">0.0 <span class="text-sm font-normal text-slate-400">/ 5</span></h4>
+                    <span class="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded font-semibold mt-2 inline-block" id="m_effStatus">--</span>
+                </div>
+                <div class="p-3.5 bg-amber-50 text-amber-600 rounded-2xl">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path></svg>
+                </div>
+            </div>
+            <!-- Card 4 -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm flex items-center justify-between border border-white hover:shadow-md transition">
+                <div>
+                    <span class="text-xs font-semibold text-slate-400 uppercase">最大學習與應用痛點</span>
+                    <h4 class="text-xl font-bold text-slate-800 mt-1 truncate max-w-[170px]" id="m_topPain">提示詞困難</h4>
+                    <span class="text-[10px] text-rose-600 bg-rose-50 px-2 py-0.5 rounded font-semibold mt-2 inline-block" id="m_topPainPct">佔比 --%</span>
+                </div>
+                <div class="p-3.5 bg-rose-50 text-rose-600 rounded-2xl">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructor Insight Advisor (Dynamic AI Insight Block) -->
+        <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row gap-5 items-start">
+            <div class="bg-indigo-600 text-white p-3 rounded-xl flex-shrink-0">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 .364l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-indigo-900 flex items-center gap-2">
+                    講師教學切入點建議 
+                    <span id="insightRoleTag" class="text-xs bg-indigo-200 text-indigo-800 font-bold px-2 py-0.5 rounded-full">針對所有學員</span>
+                </h3>
+                <p id="insightContent" class="text-indigo-950 text-sm mt-1.5 leading-relaxed">
+                    載入中...
+                </p>
+            </div>
+        </div>
+
+        <!-- Charts Grid 1 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Job Distribution -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm border border-white flex flex-col justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">1. 填答者職務類別分佈</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">學員所在的組織階級比例</p>
+                </div>
+                <div class="h-64 my-6 flex items-center justify-center">
+                    <canvas id="jobChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Most Used AI Tools -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm border border-white flex flex-col justify-between lg:col-span-2">
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">2. 最常使用的 AI 工具排行 (可複選)</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">學員日常熟悉之工具版圖</p>
+                </div>
+                <div class="h-64 my-6">
+                    <canvas id="toolChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Correlation (Double-axis) -->
+        <div class="glass-card rounded-2xl p-6 shadow-sm border border-white">
+            <div class="mb-4">
+                <h3 class="text-base font-bold text-slate-800">3. 提示詞結構化提問認知 vs. 執行面效率提升關聯性</h3>
+                <p class="text-xs text-slate-400 mt-0.5">實證：對提示詞工程了解度越深 (評分 4~5)，其效率提升感通常也越高。此曲線支持系統化提示詞教學之必要性。</p>
+            </div>
+            <div class="h-80">
+                <canvas id="correlationChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Charts Grid 2 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Usage Frequency -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm border border-white flex flex-col justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">4. 生成式 AI 的使用頻率</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">反映學員在日常工作中的依賴程度與熟悉度</p>
+                </div>
+                <div class="h-64 my-4">
+                    <canvas id="frequencyChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Application Scenarios -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm border border-white flex flex-col justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">5. 期望將 AI 應用在哪種工作場景 (可複選)</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">最迫切、最能打動學員痛點的工作情境</p>
+                </div>
+                <div class="h-64 my-4">
+                    <canvas id="scenariosChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tool adoption comparison & Difficulties -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- NotebookLM & Napkin AI Adoption -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm border border-white flex flex-col justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">6. NotebookLM 與 視覺化圖解 (如 Napkin AI) 普及狀況</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">普及率偏低的進階應用。適合作為本堂課的大亮點，滿足好奇心與商務需求。</p>
+                </div>
+                <div class="h-72 my-4">
+                    <canvas id="specialToolsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Biggest Difficulties -->
+            <div class="glass-card rounded-2xl p-6 shadow-sm border border-white flex flex-col justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-slate-800">7. 使用 AI 遇到的最大困難是什麼？</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">學員的核心卡關點（問診困難 vs 資安防線 vs 幻覺抵抗）</p>
+                </div>
+                <div class="h-72 my-4 flex items-center justify-center">
+                    <canvas id="difficultyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deep Analysis Text Tables (Chicken Rib, Expectations, AI Definition) -->
+        <div class="glass-card rounded-2xl p-6 shadow-sm border border-white">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-5 mb-5 gap-4">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800">課堂實戰演示「好材料」檢索庫</h3>
+                    <p class="text-sm text-slate-500">直接引用學員回覆，提升現場聽眾共鳴感與切身痛點！</p>
+                </div>
+                <div class="flex items-center gap-2 w-full md:w-auto">
+                    <div class="relative w-full md:w-72">
+                        <input type="text" id="textSearchInput" oninput="filterTextCards()" placeholder="搜尋關鍵字 (如: 寫作, 報表, 整理...)" class="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                        <span class="absolute left-3.5 top-2.5 text-slate-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Buttons -->
+            <div class="flex flex-wrap border-b border-slate-100 mb-6 gap-2">
+                <button onclick="switchTextTab('chickenRib')" id="tabBtn_chickenRib" class="pb-3 px-4 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition">工作中的雞肋任務 (Live Demo 完美案例)</button>
+                <button onclick="switchTextTab('expectations')" id="tabBtn_expectations" class="pb-3 px-4 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition">學員最期待解決的具體問題</button>
+                <button onclick="switchTextTab('whatIsAi')" id="tabBtn_whatIsAi" class="pb-3 px-4 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition">AI 對學員而言是什麼</button>
+            </div>
+
+            <!-- Text Card Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 max-h-[500px] overflow-y-auto pr-2 scroll-custom" id="textGrid">
+                <!-- Injected dynamically -->
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 text-slate-400 text-center py-8 border-t border-slate-800 text-xs mt-12">
+        <div class="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <p>© 2026 AntigravityIDE 數據分析工具. 專為講師量身打造的課前需求儀表板.</p>
+            <div class="flex gap-4">
+                <span class="text-slate-500">技術支援: Tailwind CSS + Chart.js + PapaParse</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Chart Reference Global Store -->
+    <script>
+        let rawData = [];
+        let parsedData = [];
+        let filteredData = [];
+        let currentFilterRole = "ALL";
+        let activeTextTab = 'chickenRib';
+
+        // Keep track of chart instances to destroy them before recreating
+        let chartInstances = {};
+
+        // Real-world sample data mapped exactly to your CSV structure
+        const sampleCSV = `時間戳記,1. 您的職務類別？,2. 您目前「最常」使用的 AI 工具為何？（可複選）,3. 您使用生成式 AI 的頻率？,4. 您主要希望將 AI 應用在哪些工作場景？（可複選）,5. 承上題，您認為 AI 目前對您「執行面」效率提升的程度？,6. 您對於「提示詞工程 (Prompt Engineering)」中，結構化提問（如：設定角色、格式）的了解程度？,7. 您是否曾使用過 NotebookLM 進行「文件知識管理」或「來源標註」？,8. 您是否嘗試過將 AI 生成內容轉化為「視覺化圖解」 (如使用 Napkin AI)？,9. 您目前使用 AI 遇到最大的困難是什麼？,"10. 對於本次課程的五大工具（ChatGPT, NotebookLM, Gemini, Claude, Perplexity），您最期待解決哪一個工作上的具體問題？",11. 您是否願意提供一個目前工作中的「雞肋任務」讓老師在課堂上實際演示如何優化？,AI對我而言是什麼？
+2026/5/15 上午 11:13:47,中階管理職,ChatGPT,每天使用,"文案/郵件撰寫, 長篇文章摘要與分析",4,5,聽過但不會用,是，常用,公司政策限制/資訊安全疑慮,ChatGPT,希望能有把長達50頁的產品合規指南快速轉換為5頁重點簡報，並指出變更處,加速工作排程與撰寫信件的秘書
+2026/5/15 上午 11:13:56,中階管理職,"ChatGPT, Gemini (Google AI)",每天使用,"文案/郵件撰寫, 長篇文章摘要與分析, 創意發想/點子碰撞",3,2,從未聽過,否，都用純文字,不知道該如何下精準的提示詞（問診困難）,Claude,每週都要把各部門繳交上來的週報整理成一份高階主管報告，格式繁瑣又無聊,第二大腦，輔助發想
+2026/5/15 上午 11:14:12,一般職員,Gemini (Google AI),偶爾想到才用,會議紀錄整理,3,3,是，常用,否，都用純文字,不知道該如何下精準的提示詞（問診困難）,Gemini,希望可以把錄音逐字稿，過濾贅字並在十分鐘內提煉出重點待辦事項,工作上很勤勞但偶爾會胡言亂語的助理
+2026/5/15 上午 11:14:30,高階主管,ChatGPT,偶爾想到才用,長篇文章摘要與分析,2,2,從未聽過,否，都用純文字,其他,報表數據查錯,要把各市場的競品定價、規格表做橫向對比，目前都靠人工手動複製剪貼,隨時待命的搜尋智囊
+2026/5/15 上午 11:15:00,中階管理職,"ChatGPT, Gemini (Google AI), NotebookLM (文件分析)",每天使用,"文案/郵件撰寫, 長篇文章摘要與分析, 程式編寫/除錯",5,4,是，常用,否，都用純文字,AI 會一本正經地胡說八道（幻覺問題）,NotebookLM,將歷史專案的所有英文規格書，建立成可以隨時用中文精準問答的知識庫，且不可出錯,加速處理工作的超能力
+2026/5/15 上午 11:15:20,一般職員,ChatGPT,每週使用數次,程式編寫/除錯,3,2,聽過但不會用,否，都用純文字,不知道該如何下精準的提示詞（問診困難）,ChatGPT,撰寫測試用的 Mock Data（虛擬測試資料），常常格式跑掉，需要一直手動調校,學習程式新框架的引路人
+2026/5/15 上午 11:15:47,專業技術職,"ChatGPT, Gemini (Google AI)",每週使用數次,"文案/郵件撰寫, 程式編寫/除錯",5,3,從未聽過,否，都用純文字,AI 會一本正經地胡說八道（幻覺問題）,ChatGPT,閱讀開源碼並重構老舊代碼中的邏輯，手動改很容易漏東漏西導致 Bug,提升工作效率與解 Bug 的程式副手
+2026/5/15 上午 11:16:15,高階主管,ChatGPT,每週使用數次,"長篇文章摘要與分析, 創意發想/點子碰撞",4,4,聽過但不會用,聽過但不會用,不知道該如何下精準的提示詞（問診困難）,Perplexity,分析大篇幅的產業白皮書，希望能直接抓取出亮點，不用自己花兩天讀完,快速掌握陌生領域知識的強大搜尋引擎
+2026/5/15 上午 11:17:05,專業技術職,"ChatGPT, Claude",每天使用,"程式編寫/除錯, 數據分析與視覺化",5,4,聽過但不會用,否，都用純文字,不知道該如何下精準的提示詞（問診困難）,Claude,希望把複雜的 JSON 或 CSV 數據快速轉化成漂亮的簡報用圖表，且可客製化配色,程式代碼協同合作的無形夥伴
+2026/5/15 上午 11:18:22,一般職員,"ChatGPT, Gemini (Google AI)",偶爾想到才用,"文案/郵件撰寫, 會議紀錄整理",2,2,從未聽過,從未聽過,不知道該如何下精準的提示詞（問診困難）,Gemini,每天要回覆大量格式化但語氣必須委婉親切的客戶投訴郵件,潤飾公文與回信的草稿產生器
+2026/5/15 上午 11:19:10,中階管理職,"ChatGPT, Perplexity",每天使用,"資料搜尋與整合, 創意發想/點子碰撞",4,3,聽過但不會用,聽過但不會用,不知道該如何下精準的提示詞（問診困難）,Perplexity,撰寫行銷推廣大綱與競品行銷話術的分析表，手動整理花費大量時間卻成效普普,商務企劃提案中不可或缺的好幫手
+2026/5/15 上午 11:20:01,一般職員,ChatGPT,每天使用,文案/郵件撰寫,3,3,聽過但不會用,否，都用純文字,不知道該如何下精準的提示詞（問診困難）,ChatGPT,處理例行公事中大量英文商業書信往來，需要確認專有名詞與文法精準無誤,隨身英文秘書`;
+
+        // Parse CSV Entry
+        function parseCSVData(csvString) {
+            Papa.parse(csvString, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    rawData = results.data;
+                    processAndNormalizeData();
+                    buildDashboard();
+                    showToast("📊 數據解析成功！已更新全站圖表。");
+                },
+                error: function(err) {
+                    showToast("❌ CSV 解析失敗，請確認編碼為 UTF-8");
+                    console.error(err);
+                }
+            });
+        }
+
+        // Set up Event Listeners for file upload
+        document.getElementById('csvFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                parseCSVData(evt.target.result);
+            };
+            reader.readAsText(file, 'UTF-8');
+        });
+
+        // Map column headers dynamically (Flexible matching)
+        function processAndNormalizeData() {
+            if (rawData.length === 0) return;
+            
+            const headers = Object.keys(rawData[0]);
+            const mapping = {};
+
+            headers.forEach(h => {
+                if (h.includes("1. 您的職務類別")) mapping.role = h;
+                else if (h.includes("最常」使用的 AI 工具")) mapping.tools = h;
+                else if (h.includes("使用生成式 AI 的頻率")) mapping.frequency = h;
+                else if (h.includes("主要希望將 AI 應用在哪些工作場景")) mapping.scenarios = h;
+                else if (h.includes("效率提升的程度")) mapping.efficiency = h;
+                else if (h.includes("提示詞工程") || h.includes("結構化提問")) mapping.prompt = h;
+                else if (h.includes("NotebookLM")) mapping.notebookLM = h;
+                else if (h.includes("視覺化圖解") || h.includes("Napkin")) mapping.visualAI = h;
+                else if (h.includes("最大的困難是什麼")) mapping.difficulty = h;
+                else if (h.includes("最期待解決哪一個工作上的具體問題")) mapping.expectations = h;
+                else if (h.includes("雞肋任務")) mapping.chickenRib = h;
+                else if (h.includes("AI對我而言")) mapping.whatIsAi = h;
+            });
+
+            parsedData = rawData.map(row => {
+                return {
+                    role: row[mapping.role] || row[headers[1]] || "一般職員",
+                    tools: row[mapping.tools] || row[headers[2]] || "ChatGPT",
+                    frequency: row[mapping.frequency] || row[headers[3]] || "偶爾想到才用",
+                    scenarios: row[mapping.scenarios] || row[headers[4]] || "",
+                    efficiency: parseInt(row[mapping.efficiency] || row[headers[5]]) || 3,
+                    prompt: parseInt(row[mapping.prompt] || row[headers[6]]) || 3,
+                    notebookLM: row[mapping.notebookLM] || row[headers[7]] || "從未聽過",
+                    visualAI: row[mapping.visualAI] || row[headers[8]] || "否，都用純文字",
+                    difficulty: row[mapping.difficulty] || row[headers[9]] || "不知道該如何下精準的提示詞",
+                    expectations: row[mapping.expectations] || row[headers[10]] || "無特別填寫",
+                    chickenRib: row[mapping.chickenRib] || row[headers[11]] || "目前不需要",
+                    whatIsAi: row[mapping.whatIsAi] || row[headers[12]] || "無"
+                };
+            });
+
+            filteredData = [...parsedData];
+        }
+
+        // Main Dashboard Builder
+        function buildDashboard() {
+            generateRoleFilters();
+            calculateMetrics();
+            updateAllCharts();
+            renderTextList();
+            generateDynamicInsights();
+        }
+
+        // Generate dynamic filter buttons
+        function generateRoleFilters() {
+            const container = document.getElementById('roleFilterGroup');
+            const roles = ["ALL", ...new Set(parsedData.map(item => item.role))];
+            
+            container.innerHTML = "";
+            roles.forEach(role => {
+                const btn = document.createElement('button');
+                btn.textContent = role === "ALL" ? "✨ 全部學員" : role;
+                btn.className = `px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 border ${
+                    currentFilterRole === role 
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200" 
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-indigo-600"
+                }`;
+                btn.onclick = () => filterByRole(role);
+                container.appendChild(btn);
+            });
+        }
+
+        function filterByRole(role) {
+            currentFilterRole = role;
+            if (role === "ALL") {
+                filteredData = [...parsedData];
+            } else {
+                filteredData = parsedData.filter(item => item.role === role);
+            }
+            
+            generateRoleFilters();
+            calculateMetrics();
+            updateAllCharts();
+            renderTextList();
+            generateDynamicInsights();
+        }
+
+        // Top Metrics calculations
+        function calculateMetrics() {
+            const total = filteredData.length;
+            document.getElementById('m_total').textContent = total;
+
+            if (total === 0) return;
+
+            // Efficiency Average
+            const sumEfficiency = filteredData.reduce((acc, curr) => acc + curr.efficiency, 0);
+            const avgEfficiency = (sumEfficiency / total).toFixed(1);
+            document.getElementById('m_avgEff').innerHTML = `${avgEfficiency} <span class="text-sm font-normal text-slate-400">/ 5</span>`;
+            
+            let statusText = "中等效率增幅";
+            if (avgEfficiency >= 4.0) statusText = "⚡ 效益顯著 (高)";
+            else if (avgEfficiency >= 3.0) statusText = "📈 穩定提升中";
+            else statusText = "⚠️ 面臨極大卡關點";
+            document.getElementById('m_effStatus').textContent = statusText;
+
+            // Most Popular Tool (Multi-select)
+            const toolCounts = {};
+            filteredData.forEach(item => {
+                const toolsList = item.tools.split(',').map(t => t.trim());
+                toolsList.forEach(t => {
+                    if (!t) return;
+                    toolCounts[t] = (toolCounts[t] || 0) + 1;
+                });
+            });
+            let topTool = "無";
+            let topToolCount = 0;
+            for (const [tool, count] of Object.entries(toolCounts)) {
+                if (count > topToolCount) {
+                    topTool = tool;
+                    topToolCount = count;
+                }
+            }
+            const cleanTopToolName = topTool.split('(')[0].trim();
+            document.getElementById('m_topTool').textContent = cleanTopToolName;
+            document.getElementById('m_topToolPct').textContent = `滲透率 ${Math.round((topToolCount / total) * 100)}%`;
+
+            // Most Common Difficulty
+            const diffCounts = {};
+            filteredData.forEach(item => {
+                const diff = item.difficulty.trim();
+                if (diff && diff !== "其他") {
+                    diffCounts[diff] = (diffCounts[diff] || 0) + 1;
+                }
+            });
+            let topDiff = "其他";
+            let topDiffCount = 0;
+            for (const [diff, count] of Object.entries(diffCounts)) {
+                if (count > topDiffCount) {
+                    topDiff = diff;
+                    topDiffCount = count;
+                }
+            }
+            const cleanDiffName = topDiff.split('（')[0].split('(')[0].trim();
+            document.getElementById('m_topPain').textContent = cleanDiffName;
+            document.getElementById('m_topPainPct').textContent = `佔比 ${Math.round((topDiffCount / total) * 100)}%`;
+        }
+
+        // Generate custom dynamic advice for instructors
+        function generateDynamicInsights() {
+            const role = currentFilterRole;
+            const tag = document.getElementById('insightRoleTag');
+            const content = document.getElementById('insightContent');
+            
+            tag.textContent = role === "ALL" ? "針對所有學員" : `針對【${role}】`;
+            
+            // Calculate specific sub-stats
+            const total = filteredData.length;
+            const neverNotebook = filteredData.filter(i => i.notebookLM.includes("從未聽過") || i.notebookLM.includes("聽過但不會用")).length;
+            const pctNeverNotebook = total > 0 ? Math.round((neverNotebook / total) * 100) : 0;
+            
+            const promptHigh = filteredData.filter(i => i.prompt >= 4).length;
+            const pctPromptHigh = total > 0 ? Math.round((promptHigh / total) * 100) : 0;
+
+            let textAdvice = "";
+
+            if (role === "ALL") {
+                textAdvice = `
+                    💡 <strong>核心觀察</strong>：全體學員中有 <strong>${pctNeverNotebook}%</strong> 沒用過或不知道 <strong>NotebookLM</strong>，這是講師絕對要在課堂上引薦的「王牌工具」，有極高的機率能帶來全場驚豔感！<br>
+                    🔥 <strong>教學策略</strong>：建議將課程比重放在「如何下高含金量、具備角色與邏輯格式的提示詞」。因為高達半數人都指出問診困難。實戰部分直接挑選「合規文件摘要」與「逐字稿轉換」進行展示，回響會最強烈。
+                `;
+            } else if (role.includes("主管") || role.includes("管理")) {
+                textAdvice = `
+                    💡 <strong>針對管理職</strong>：本類別學員對 AI 的期望極大程度落在「<strong>長篇文章摘要與分析</strong>」與「<strong>創意點子碰撞</strong>」。他們往往沒有時間讀完50頁長文，但極度需要產出結構化的工作企劃。<br>
+                    🔥 <strong>教學策略</strong>：展示將高階合規文件、競品規格扔給 <strong>NotebookLM / Claude</strong>，一鍵生成 5 頁決策報告的「省時魔法」。別花太多時間教如何寫代碼，多講「如何指揮 AI 扮演專案智囊」。
+                `;
+            } else if (role.includes("職員") || role.includes("助理")) {
+                textAdvice = `
+                    💡 <strong>針對基層職員</strong>：他們最高頻的工作場景是「<strong>文案、郵件撰寫</strong>」與「<strong>會議紀錄整理</strong>」，也就是每天消耗他們1~2小時的日常雞肋任務。<br>
+                    🔥 <strong>教學策略</strong>：教學要做到「落地、即學即用」。現場提供他們可以複製貼上的 **「客戶回信/投訴回覆萬用範本」**。引導他們建立自己的常用提示詞庫。
+                `;
+            } else if (role.includes("技術") || role.includes("研發")) {
+                textAdvice = `
+                    💡 <strong>針對技術專業崗位</strong>：他們主要依賴 AI 來做「<strong>程式編寫與除錯</strong>」。對提示詞結構已有基礎（了解度 4-5 分佔比約 <strong>${pctPromptHigh}%</strong>）。<br>
+                    🔥 <strong>教學策略</strong>：跳過最基礎的觀念介紹，直奔主題！展示如何利用 <strong>Claude / ChatGPT</strong> 重構複雜老舊代碼、串接 API、生成 Mock Data 的進階技巧，並加強資安政策的宣導與程式碼保護手法。
+                `;
+            } else {
+                textAdvice = `
+                    💡 <strong>針對本族群學員</strong>：使用頻率偏向中高，但自評效率提升仍有成長空間。核心在於如何突破日常簡單的問答，進入多工具串接工作流。<br>
+                    🔥 <strong>教學策略</strong>：教學重在「破冰與觀念打破」，展示 AI 已經不只是問答機器人，而是能協助處理一整套「雞肋工作流」的虛擬員工。
+                `;
+            }
+
+            content.innerHTML = textAdvice;
+        }
+
+        // Track & Render chart helper
+        function trackChart(id, config) {
+            if (chartInstances[id]) {
+                chartInstances[id].destroy();
+            }
+            const ctx = document.getElementById(id).getContext('2d');
+            chartInstances[id] = new Chart(ctx, config);
+        }
+
+        function updateAllCharts() {
+            renderJobChart();
+            renderToolChart();
+            renderFrequencyChart();
+            renderScenariosChart();
+            renderCorrelationChart();
+            renderSpecialToolsChart();
+            renderDifficultyChart();
+        }
+
+        // --- Chart Render Functions (Highly Optimized Styling) ---
+
+        function renderJobChart() {
+            const roleCounts = {};
+            const targetData = currentFilterRole === "ALL" ? parsedData : filteredData;
+            targetData.forEach(item => {
+                roleCounts[item.role] = (roleCounts[item.role] || 0) + 1;
+            });
+
+            const labels = Object.keys(roleCounts);
+            const data = Object.values(roleCounts);
+
+            trackChart('jobChart', {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: ['#6366f1', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10, padding: 15, font: { family: 'Noto Sans TC', size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        function renderToolChart() {
+            const toolCounts = {};
+            filteredData.forEach(item => {
+                const list = item.tools.split(',').map(t => t.trim());
+                list.forEach(tool => {
+                    if (!tool) return;
+                    toolCounts[tool] = (toolCounts[tool] || 0) + 1;
+                });
+            });
+
+            const sortedTools = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]);
+            const labels = sortedTools.map(item => item[0]);
+            const data = sortedTools.map(item => item[1]);
+
+            trackChart('toolChart', {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '常用人數',
+                        data: data,
+                        backgroundColor: 'rgba(99, 102, 241, 0.85)',
+                        hoverBackgroundColor: '#4f46e5',
+                        borderRadius: 8,
+                        barThickness: 20
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { beginAtZero: true, grid: { display: false } },
+                        y: { grid: { display: false }, ticks: { font: { family: 'Noto Sans TC', size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        function renderFrequencyChart() {
+            const freqCounts = {};
+            filteredData.forEach(item => {
+                freqCounts[item.frequency] = (freqCounts[item.frequency] || 0) + 1;
+            });
+
+            const order = ["每天使用", "每週使用數次", "偶爾想到才用", "從未使用"];
+            const labels = order.filter(o => freqCounts[o] !== undefined);
+            Object.keys(freqCounts).forEach(k => { if (!labels.includes(k)) labels.push(k); });
+
+            const data = labels.map(l => freqCounts[l] || 0);
+
+            trackChart('frequencyChart', {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: ['#4f46e5', '#818cf8', '#c7d2fe', '#e2e8f0'],
+                        borderRadius: 8,
+                        maxBarThickness: 45
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { family: 'Noto Sans TC' } } },
+                        y: { beginAtZero: true, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderScenariosChart() {
+            const counts = {};
+            filteredData.forEach(item => {
+                const list = item.scenarios.split(',').map(s => s.trim());
+                list.forEach(scen => {
+                    if (!scen) return;
+                    counts[scen] = (counts[scen] || 0) + 1;
+                });
+            });
+
+            const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+            const labels = sorted.map(i => i[0]);
+            const data = sorted.map(i => i[1]);
+
+            trackChart('scenariosChart', {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: 'rgba(16, 185, 129, 0.85)',
+                        hoverBackgroundColor: '#059669',
+                        borderRadius: 8,
+                        barThickness: 16
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { beginAtZero: true, grid: { display: false } },
+                        y: { grid: { display: false }, ticks: { font: { family: 'Noto Sans TC', size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        function renderCorrelationChart() {
+            const stats = { 1: { effSum: 0, count: 0 }, 2: { effSum: 0, count: 0 }, 3: { effSum: 0, count: 0 }, 4: { effSum: 0, count: 0 }, 5: { effSum: 0, count: 0 } };
+            
+            filteredData.forEach(item => {
+                const p = item.prompt;
+                const e = item.efficiency;
+                if (stats[p]) {
+                    stats[p].effSum += e;
+                    stats[p].count += 1;
+                }
+            });
+
+            const labels = ["1分 (完全不了解)", "2分 (稍微聽過)", "3分 (基本了解)", "4分 (結構化常用)", "5分 (極度精通)"];
+            const avgEfficiencies = [];
+            const sampleSizes = [];
+
+            for (let i = 1; i <= 5; i++) {
+                const avg = stats[i].count > 0 ? (stats[i].effSum / stats[i].count).toFixed(2) : 0;
+                avgEfficiencies.push(avg);
+                sampleSizes.push(stats[i].count);
+            }
+
+            trackChart('correlationChart', {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '平均執行面效率提升 (左軸: 1-5分)',
+                            data: avgEfficiencies,
+                            borderColor: '#6366f1',
+                            borderWidth: 3,
+                            pointBackgroundColor: '#4f46e5',
+                            pointHoverRadius: 7,
+                            backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                            fill: true,
+                            tension: 0.35,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '學員人數 (右軸)',
+                            data: sampleSizes,
+                            type: 'bar',
+                            backgroundColor: 'rgba(148, 163, 184, 0.35)',
+                            borderRadius: 6,
+                            barThickness: 30,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { font: { family: 'Noto Sans TC', size: 11 } } }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            min: 0,
+                            max: 5,
+                            title: { display: true, text: '效率提升自評均分' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            title: { display: true, text: '樣本數' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderSpecialToolsChart() {
+            const notebooks = { "是，常用": 0, "聽過但不會用": 0, "從未聽過": 0 };
+            const visualAIs = { "是，常用": 0, "聽過但不會用": 0, "從未聽過": 0 };
+
+            filteredData.forEach(item => {
+                const n = item.notebookLM.trim();
+                const v = item.visualAI.trim();
+                
+                if (n.startsWith("是") || n.includes("常用")) notebooks["是，常用"]++;
+                else if (n.startsWith("聽過") || n.includes("不會用")) notebooks["聽過但不會用"]++;
+                else notebooks["從未聽過"]++;
+
+                if (v.startsWith("是") || v.includes("常用") || v.includes("願意")) visualAIs["是，常用"]++;
+                else if (v.startsWith("聽過") || v.includes("不會用")) visualAIs["聽過但不會用"]++;
+                else visualAIs["從未聽過"]++;
+            });
+
+            const labels = ["從未聽過", "聽過但不會用", "是，常用"];
+
+            trackChart('specialToolsChart', {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'NotebookLM 文件分析標註',
+                            data: [notebooks["從未聽過"], notebooks["聽過但不會用"], notebooks["是，常用"]],
+                            backgroundColor: 'rgba(59, 130, 246, 0.85)',
+                            borderRadius: 6
+                        },
+                        {
+                            label: '視覺化圖解 (如 Napkin AI)',
+                            data: [visualAIs["從未聽過"], visualAIs["聽過但不會用"], visualAIs["是，常用"]],
+                            backgroundColor: 'rgba(236, 72, 153, 0.85)',
+                            borderRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { family: 'Noto Sans TC' } } },
+                        y: { beginAtZero: true, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderDifficultyChart() {
+            const counts = {};
+            filteredData.forEach(item => {
+                const diff = item.difficulty.trim();
+                if (!diff) return;
+                counts[diff] = (counts[diff] || 0) + 1;
+            });
+
+            const labels = Object.keys(counts).map(l => l.split('（')[0]);
+            const data = Object.values(counts);
+
+            trackChart('difficultyChart', {
+                type: 'polarArea',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            'rgba(239, 68, 68, 0.7)',
+                            'rgba(245, 158, 11, 0.7)',
+                            'rgba(99, 102, 241, 0.7)',
+                            'rgba(16, 185, 129, 0.7)',
+                            'rgba(139, 92, 246, 0.7)'
+                        ],
+                        borderColor: '#ffffff',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 8, padding: 10, font: { size: 10, family: 'Noto Sans TC' } } }
+                    }
+                }
+            });
+        }
+
+        // --- Text tab switching & rendering ---
+
+        function switchTextTab(tabId) {
+            activeTextTab = tabId;
+            const tabs = ['chickenRib', 'expectations', 'whatIsAi'];
+            tabs.forEach(t => {
+                const el = document.getElementById(`tabBtn_${t}`);
+                if (t === tabId) {
+                    el.className = "pb-3 px-4 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition";
+                } else {
+                    el.className = "pb-3 px-4 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition";
+                }
+            });
+            renderTextList();
+        }
+
+        function filterTextCards() {
+            renderTextList();
+        }
+
+        function renderTextList() {
+            const grid = document.getElementById('textGrid');
+            const search = document.getElementById('textSearchInput').value.toLowerCase();
+            grid.innerHTML = "";
+
+            let itemsToDisplay = [];
+
+            filteredData.forEach(item => {
+                let content = "";
+                let title = "";
+                let colorClass = "indigo";
+
+                if (activeTextTab === 'chickenRib') {
+                    content = item.chickenRib;
+                    title = "雞肋任務";
+                    colorClass = "rose";
+                } else if (activeTextTab === 'expectations') {
+                    content = item.expectations;
+                    title = "最想解決";
+                    colorClass = "blue";
+                } else {
+                    content = item.whatIsAi;
+                    title = "AI 像是我的...";
+                    colorClass = "emerald";
+                }
+
+                // Clean irrelevant answers
+                if (content && content !== "目前不需要" && content !== "無回覆" && content !== "無" && content !== "Xxx") {
+                    if (!search || content.toLowerCase().includes(search) || item.role.toLowerCase().includes(search)) {
+                        itemsToDisplay.push({
+                            role: item.role,
+                            content: content,
+                            title: title,
+                            colorClass: colorClass
+                        });
+                    }
+                }
+            });
+
+            if (itemsToDisplay.length === 0) {
+                grid.innerHTML = `<div class="col-span-full py-12 text-center text-slate-400 text-sm">找不到相符的實戰卡片。</div>`;
+                return;
+            }
+
+            itemsToDisplay.forEach(item => {
+                const card = document.createElement('div');
+                let colorBorder = "border-rose-100 bg-rose-50/10 hover:border-rose-300";
+                let tagColor = "bg-rose-50 text-rose-700 border-rose-200";
+                
+                if (item.colorClass === 'blue') {
+                    colorBorder = "border-blue-100 bg-blue-50/10 hover:border-blue-300";
+                    tagColor = "bg-blue-50 text-blue-700 border-blue-200";
+                } else if (item.colorClass === 'emerald') {
+                    colorBorder = "border-emerald-100 bg-emerald-50/10 hover:border-emerald-300";
+                    tagColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
+                }
+
+                card.className = `p-5 rounded-2xl border ${colorBorder} flex flex-col justify-between gap-4 shadow-sm hover:shadow-md transition-all duration-300 bg-white`;
+                card.innerHTML = `
+                    <div class="flex flex-col gap-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${tagColor}">${item.title}</span>
+                            <span class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">${item.role}</span>
+                        </div>
+                        <p class="text-xs md:text-sm text-slate-700 leading-relaxed font-medium">「 ${item.content} 」</p>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // Custom Toast banner (avoiding alerts)
+        function showToast(message, icon = "💡") {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMessage').innerHTML = message;
+            document.getElementById('toastIcon').textContent = icon;
+            
+            toast.className = "fixed bottom-5 right-5 z-50 transform translate-y-0 opacity-100 transition-all duration-300 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm";
+            
+            setTimeout(() => {
+                toast.className = "fixed bottom-5 right-5 z-50 transform translate-y-10 opacity-0 transition-all duration-300 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm";
+            }, 3500);
+        }
+
+        function resetToSample() {
+            parseCSVData(sampleCSV);
+            showToast("已成功載入預置的問卷樣本數據！", "🔄");
+        }
+
+        // Initialize dashboard immediately on load
+        window.onload = function() {
+            parseCSVData(sampleCSV);
+        };
+    </script>
+</body>
+</html>
